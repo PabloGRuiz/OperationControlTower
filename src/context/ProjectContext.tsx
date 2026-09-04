@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import {
   User,
   UserRole,
@@ -16,6 +16,7 @@ import {
   initialProjects,
   initialNotifications
 } from '@/types/roadmap';
+import { hashPassword, INITIAL_ADMIN_PASSWORD_HASH } from '@/lib/crypto';
 
 interface ProjectContextType {
   currentUser: User | null;
@@ -28,9 +29,10 @@ interface ProjectContextType {
   setActiveView: (view: 'board' | 'audit' | 'admin') => void;
   unreadNotificationsCount: number;
   
-  // Autenticación
-  login: (email: string, password: string) => { success: boolean; error?: string };
+  // Autenticación con Rate-Limiting y Hashing
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  lockoutRemainingSeconds: number;
   
   // Acciones sobre Proyectos y Flujo
   createProject: (data: {
@@ -55,9 +57,10 @@ interface ProjectContextType {
   updateStageTitle: (stageId: string, newTitle: string, newDescription?: string) => void;
   addDepartment: (name: string, code: string, color: string) => void;
   deleteDepartment: (deptId: string) => void;
-  addUser: (name: string, email: string, password: string, role: UserRole, departmentId: string) => void;
+  addUser: (name: string, email: string, password: string, role: UserRole, departmentId: string) => Promise<void>;
   deleteUser: (userId: string) => void;
-  updateUserRole: (userId: string, newRole: UserRole, newDepartmentId: string, newPassword?: string) => void;
+  updateUserRole: (userId: string, newRole: UserRole, newDepartmentId: string) => void;
+  updateUserPassword: (userId: string, newPassword: string) => Promise<void>;
   
   // Notificaciones
   markNotificationAsRead: (notificationId: string) => void;
@@ -69,7 +72,10 @@ interface ProjectContextType {
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'OCT_OPERATIONS_TOWER_CLEAN_DB_V2';
+const STORAGE_KEY = 'OCT_OPERATIONS_TOWER_CLEAN_SECURE_DB_V3';
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutos de inactividad
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 30 * 1000; // 30 segundos de bloqueo tras 5 intentos fallidos
 
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [isClient, setIsClient] = useState(false);
@@ -80,6 +86,33 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
   const [activeView, setActiveView] = useState<'board' | 'audit' | 'admin'>('board');
+
+  // Seguridad: Control de intentos fallidos
+  const [failedAttempts, setFailedAttempts] = useState<number>(0);
+  const [lockoutUntil, setLockoutUntil] = useState<number | null>(null);
+  const [lockoutRemainingSeconds, setLockoutRemainingSeconds] = useState<number>(0);
+
+  // Contador regresivo de bloqueo
+  useEffect(() => {
+    if (!lockoutUntil) {
+      setLockoutRemainingSeconds(0);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      if (remaining <= 0) {
+        setLockoutUntil(null);
+        setFailedAttempts(0);
+        setLockoutRemainingSeconds(0);
+        clearInterval(interval);
+      } else {
+        setLockoutRemainingSeconds(remaining);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
 
   // Cargar estado inicial desde localStorage
   useEffect(() => {
@@ -124,22 +157,81 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
   }, [users, departments, stages, projects, notifications, currentUser, isClient]);
 
-  // LOGIN
-  const login = (email: string, password: string) => {
+  // Timeout de sesión por inactividad
+  const handleUserActivity = useCallback(() => {
+    if (!currentUser) return;
+    localStorage.setItem('OCT_LAST_ACTIVITY', Date.now().toString());
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+
+    window.addEventListener('mousemove', handleUserActivity);
+    window.addEventListener('keydown', handleUserActivity);
+    window.addEventListener('click', handleUserActivity);
+
+    const checkTimeout = setInterval(() => {
+      const lastActivity = Number(localStorage.getItem('OCT_LAST_ACTIVITY') || Date.now());
+      if (Date.now() - lastActivity > SESSION_TIMEOUT_MS) {
+        logout();
+      }
+    }, 60000);
+
+    return () => {
+      window.removeEventListener('mousemove', handleUserActivity);
+      window.removeEventListener('keydown', handleUserActivity);
+      window.removeEventListener('click', handleUserActivity);
+      clearInterval(checkTimeout);
+    };
+  }, [currentUser, handleUserActivity]);
+
+  // LOGIN CON RATE-LIMITING Y HASHING SEGURO
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    // Verificar si está bloqueado por intentos fallidos
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      const secondsLeft = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      return {
+        success: false,
+        error: `Acceso bloqueado por seguridad tras reiterados intentos fallidos. Reintenta en ${secondsLeft} segundos.`
+      };
+    }
+
     const trimmedEmail = email.trim().toLowerCase();
     const found = users.find((u) => u.email.toLowerCase() === trimmedEmail);
     
     if (!found) {
-      return { success: false, error: 'Usuario no encontrado con ese correo institucional.' };
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      if (newAttempts >= MAX_FAILED_ATTEMPTS) {
+        setLockoutUntil(Date.now() + LOCKOUT_DURATION_MS);
+        return {
+          success: false,
+          error: `Has superado el límite de 5 intentos fallidos. Formulario bloqueado durante 30 segundos.`
+        };
+      }
+      return { success: false, error: 'Credenciales inválidas.' };
     }
     
-    // Si tiene contraseña configurada la validamos, de lo contrario default 'admin'
-    const expectedPassword = found.password || 'admin';
-    if (expectedPassword !== password.trim()) {
+    // Validar hash de contraseña
+    const inputHash = await hashPassword(password.trim());
+    if (found.passwordHash !== inputHash) {
+      const newAttempts = failedAttempts + 1;
+      setFailedAttempts(newAttempts);
+      if (newAttempts >= MAX_FAILED_ATTEMPTS) {
+        setLockoutUntil(Date.now() + LOCKOUT_DURATION_MS);
+        return {
+          success: false,
+          error: `Has superado el límite de 5 intentos fallidos. Formulario bloqueado durante 30 segundos.`
+        };
+      }
       return { success: false, error: 'Contraseña incorrecta. Verifica tus credenciales.' };
     }
 
+    // Login exitoso: resetear intentos
+    setFailedAttempts(0);
+    setLockoutUntil(null);
     setCurrentUser(found);
+    localStorage.setItem('OCT_LAST_ACTIVITY', Date.now().toString());
     return { success: true };
   };
 
@@ -147,6 +239,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     setCurrentUser(null);
     setActiveView('board');
+    localStorage.removeItem('OCT_LAST_ACTIVITY');
   };
 
   // CREAR PROYECTO
@@ -469,18 +562,20 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setDepartments((prev) => prev.filter((d) => d.id !== deptId));
   };
 
-  const addUser = (
+  // Alta de usuario con hasheo seguro
+  const addUser = async (
     name: string,
     email: string,
     password: string,
     role: UserRole,
     departmentId: string
   ) => {
+    const pHash = await hashPassword(password.trim() || '123456');
     const newUser: User = {
       id: `usr-${Date.now()}`,
       name,
       email: email.trim().toLowerCase(),
-      password: password.trim() || '123456',
+      passwordHash: pHash,
       role,
       departmentId,
       avatarUrl: `https://images.unsplash.com/photo-${1500000000000 + Math.floor(Math.random() * 100000000)}?w=150&auto=format&fit=crop&q=80`
@@ -496,8 +591,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const updateUserRole = (
     userId: string,
     newRole: UserRole,
-    newDepartmentId: string,
-    newPassword?: string
+    newDepartmentId: string
   ) => {
     setUsers((prev) =>
       prev.map((u) => {
@@ -505,8 +599,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           return {
             ...u,
             role: newRole,
-            departmentId: newDepartmentId,
-            ...(newPassword?.trim() ? { password: newPassword.trim() } : {})
+            departmentId: newDepartmentId
           };
         }
         return u;
@@ -518,11 +611,21 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           ? {
               ...prev,
               role: newRole,
-              departmentId: newDepartmentId,
-              ...(newPassword?.trim() ? { password: newPassword.trim() } : {})
+              departmentId: newDepartmentId
             }
           : null
       );
+    }
+  };
+
+  // Cambio seguro de contraseña
+  const updateUserPassword = async (userId: string, newPassword: string) => {
+    const pHash = await hashPassword(newPassword.trim());
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, passwordHash: pHash } : u))
+    );
+    if (currentUser?.id === userId) {
+      setCurrentUser((prev) => (prev ? { ...prev, passwordHash: pHash } : null));
     }
   };
 
@@ -573,6 +676,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         unreadNotificationsCount,
         login,
         logout,
+        lockoutRemainingSeconds,
         createProject,
         markAsCompleted,
         markAsControlled,
@@ -584,6 +688,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         addUser,
         deleteUser,
         updateUserRole,
+        updateUserPassword,
         markNotificationAsRead,
         markAllNotificationsAsRead,
         resetCleanDatabase

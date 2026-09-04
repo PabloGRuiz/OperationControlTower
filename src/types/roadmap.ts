@@ -1,3 +1,5 @@
+import { INITIAL_ADMIN_PASSWORD_HASH } from '@/lib/crypto';
+
 export type UserRole = 'USUARIO' | 'ENCARGADO' | 'DIRECTOR' | 'ADMINISTRADOR';
 
 export type UrgencyLevel = 'BAJA' | 'MEDIA' | 'ALTA' | 'URGENTE';
@@ -15,7 +17,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  password?: string;
+  passwordHash: string; // Almacenamiento seguro con hash SHA-256 + Salt
   role: UserRole;
   departmentId: string;
   avatarUrl: string;
@@ -81,7 +83,7 @@ export interface Notification {
 }
 
 // -------------------------------------------------------------
-// BASE DE DATOS INICIAL LIMPIA (SOLO CUENTA ADMINISTRADOR)
+// BASE DE DATOS INICIAL LIMPIA Y SEGURA (ADMIN CON PASSWORD HASH)
 // -------------------------------------------------------------
 
 export const initialStages: Stage[] = [
@@ -98,14 +100,13 @@ export const initialUsers: User[] = [
     id: 'usr-admin',
     name: 'Administrador General',
     email: 'admin@torre.gob.ar',
-    password: 'admin',
+    passwordHash: INITIAL_ADMIN_PASSWORD_HASH,
     role: 'ADMINISTRADOR',
     departmentId: '',
     avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
   }
 ];
 
-// Base de datos limpia sin departamentos ni proyectos ficticios
 export const initialDepartments: Department[] = [];
 
 export const initialProjects: Project[] = [];

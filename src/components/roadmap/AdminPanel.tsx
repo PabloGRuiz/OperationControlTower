@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { UserRole } from '@/types/roadmap';
+import { UserRole, User } from '@/types/roadmap';
 import { useProjectControlTower } from '@/context/ProjectContext';
 import {
   Settings,
@@ -15,13 +15,22 @@ import {
   Trash2,
   KeyRound,
   Edit3,
-  AlertCircle
+  AlertCircle,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -41,6 +50,7 @@ export default function AdminPanel() {
     addUser,
     deleteUser,
     updateUserRole,
+    updateUserPassword,
     resetCleanDatabase
   } = useProjectControlTower();
 
@@ -63,8 +73,13 @@ export default function AdminPanel() {
   const [newUserRole, setNewUserRole] = useState<UserRole>('USUARIO');
   const [newUserDeptId, setNewUserDeptId] = useState('');
 
+  // Estado para cambio seguro de contraseña
+  const [passwordModalUser, setPasswordModalUser] = useState<User | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState('');
+
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleStartEditStage = (stage: typeof stages[0]) => {
     setEditingStageId(stage.id);
@@ -91,11 +106,17 @@ export default function AdminPanel() {
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+
     if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
       setErrorMsg('Todos los campos son obligatorios, incluyendo la contraseña inicial.');
+      return;
+    }
+
+    if (newUserPassword.trim().length < 6) {
+      setErrorMsg('Por políticas de seguridad, la contraseña debe tener al menos 6 caracteres.');
       return;
     }
 
@@ -104,17 +125,40 @@ export default function AdminPanel() {
       return;
     }
 
-    addUser(
-      newUserName.trim(),
-      newUserEmail.trim(),
-      newUserPassword.trim(),
-      newUserRole,
-      newUserDeptId
-    );
-    setNewUserName('');
-    setNewUserEmail('');
-    setNewUserPassword('');
-    setSuccessMsg('Cuenta de funcionario creada con éxito. Ya puede iniciar sesión.');
+    setLoading(true);
+    try {
+      await addUser(
+        newUserName.trim(),
+        newUserEmail.trim(),
+        newUserPassword.trim(),
+        newUserRole,
+        newUserDeptId
+      );
+      setNewUserName('');
+      setNewUserEmail('');
+      setNewUserPassword('');
+      setSuccessMsg('Cuenta de funcionario creada y hasheada con SHA-256.');
+      setTimeout(() => setSuccessMsg(''), 3000);
+    } catch (err) {
+      setErrorMsg('Error al generar el hash seguro de la contraseña.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordModalUser || !newPasswordValue.trim()) return;
+
+    if (newPasswordValue.trim().length < 6) {
+      alert('La nueva contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    await updateUserPassword(passwordModalUser.id, newPasswordValue.trim());
+    setPasswordModalUser(null);
+    setNewPasswordValue('');
+    setSuccessMsg(`Contraseña actualizada con éxito para ${passwordModalUser.name}.`);
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
@@ -128,11 +172,11 @@ export default function AdminPanel() {
               <Settings className="w-5 h-5" />
             </div>
             <h2 className="text-2xl font-bold text-slate-900 tracking-tight">
-              Panel de Administración y Control Maestro
+              Panel de Administración y Seguridad
             </h2>
           </div>
           <p className="text-sm text-slate-500 font-medium mt-1">
-            Gestión de columnas del tablero, alta de departamentos, asignación de roles y control de cuentas.
+            Gestión de columnas, control de departamentos, alta de cuentas y credenciales encriptadas.
           </p>
         </div>
 
@@ -199,7 +243,7 @@ export default function AdminPanel() {
           }`}
         >
           <Users className="w-4 h-4" />
-          3. Usuarios y Cuentas ({users.length})
+          3. Usuarios y Credenciales ({users.length})
         </button>
       </div>
 
@@ -385,15 +429,15 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* PESTAÑA 3: USUARIOS Y ASIGNACIÓN DE ROLES */}
+      {/* PESTAÑA 3: USUARIOS Y GESTIÓN DE CREDENCIALES SEGURAS */}
       {activeTab === 'users' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
             <h3 className="text-sm font-bold text-slate-800">
-              Gestión de Cuentas y Contraseñas
+              Gestión de Cuentas y Accesos
             </h3>
             <p className="text-xs text-slate-500">
-              Administra los funcionarios, sus roles y sus contraseñas de acceso local.
+              Las contraseñas se almacenan mediante hash criptográfico (SHA-256 + Salt) y no son visibles en texto plano.
             </p>
 
             <div className="divide-y divide-slate-100">
@@ -418,13 +462,14 @@ export default function AdminPanel() {
                           )}
                         </div>
                         <div className="text-xs text-slate-400">{user.email}</div>
-                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                          Pass: <strong className="text-slate-700">{user.password || 'admin'}</strong>
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
+                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                          <span>Clave protegida (Hash SHA-256)</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                       {/* Selector de Rol */}
                       <Select
                         value={user.role}
@@ -433,7 +478,7 @@ export default function AdminPanel() {
                           newRole && updateUserRole(user.id, newRole as UserRole, user.departmentId)
                         }
                       >
-                        <SelectTrigger className="h-8 text-xs font-bold w-32 bg-slate-50 border-slate-200">
+                        <SelectTrigger className="h-8 text-xs font-bold w-28 bg-slate-50 border-slate-200">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -452,7 +497,7 @@ export default function AdminPanel() {
                           newDept && updateUserRole(user.id, user.role, newDept)
                         }
                       >
-                        <SelectTrigger className="h-8 text-xs font-medium w-40 bg-slate-50 border-slate-200">
+                        <SelectTrigger className="h-8 text-xs font-medium w-36 bg-slate-50 border-slate-200">
                           <SelectValue placeholder="Sin Depto" />
                         </SelectTrigger>
                         <SelectContent>
@@ -464,6 +509,20 @@ export default function AdminPanel() {
                           ))}
                         </SelectContent>
                       </Select>
+
+                      {/* Botón de Cambiar Contraseña */}
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        onClick={() => {
+                          setPasswordModalUser(user);
+                          setNewPasswordValue('');
+                        }}
+                        className="h-8 w-8 text-slate-600 hover:text-slate-900 rounded-lg shrink-0"
+                        title="Cambiar Contraseña"
+                      >
+                        <KeyRound className="w-3.5 h-3.5" />
+                      </Button>
 
                       {!isMasterAdmin && (
                         <Button
@@ -487,6 +546,7 @@ export default function AdminPanel() {
             </div>
           </div>
 
+          {/* Formulario de Crear Usuario */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
             <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
               <Plus className="w-4 h-4 text-purple-600" />
@@ -517,14 +577,15 @@ export default function AdminPanel() {
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Contraseña de Acceso</Label>
+                <Label className="text-xs font-bold text-slate-700">Contraseña Inicial (mín. 6 caracteres)</Label>
                 <Input
                   value={newUserPassword}
                   onChange={(e) => setNewUserPassword(e.target.value)}
-                  placeholder="Contraseña inicial"
-                  type="text"
+                  placeholder="••••••••"
+                  type="password"
                   className="text-xs h-9 rounded-lg font-mono"
                   required
+                  minLength={6}
                 />
               </div>
 
@@ -562,14 +623,66 @@ export default function AdminPanel() {
 
               <Button
                 type="submit"
+                disabled={loading}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold h-9 rounded-lg shadow-sm"
               >
-                Crear Cuenta de Funcionario
+                {loading ? 'Creando...' : 'Crear Cuenta Segura'}
               </Button>
             </form>
           </div>
         </div>
       )}
+
+      {/* MODAL DE CAMBIO SEGURO DE CONTRASEÑA */}
+      <Dialog open={Boolean(passwordModalUser)} onOpenChange={(open) => !open && setPasswordModalUser(null)}>
+        <DialogContent className="sm:max-w-[420px] p-6 rounded-2xl">
+          <DialogHeader className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="p-2 rounded-lg bg-purple-50 text-purple-700">
+                <Lock className="w-4 h-4" />
+              </span>
+              <DialogTitle className="text-lg font-bold text-slate-900">
+                Cambiar Contraseña
+              </DialogTitle>
+            </div>
+            <p className="text-xs text-slate-500 font-medium">
+              Usuario: <strong className="text-slate-800">{passwordModalUser?.name}</strong> ({passwordModalUser?.email})
+            </p>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveNewPassword} className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold text-slate-700">Nueva Contraseña</Label>
+              <Input
+                type="password"
+                value={newPasswordValue}
+                onChange={(e) => setNewPasswordValue(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                className="h-10 rounded-xl text-sm"
+                required
+                minLength={6}
+              />
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPasswordModalUser(null)}
+                className="rounded-xl text-xs h-9"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold h-9"
+              >
+                Guardar Contraseña Hasheada
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
