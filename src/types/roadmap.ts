@@ -1,4 +1,4 @@
-import { INITIAL_ADMIN_PASSWORD_HASH } from '@/lib/crypto';
+import { INITIAL_ADMIN_PASSWORD_HASH, INITIAL_ADMIN123_PASSWORD_HASH } from '@/lib/crypto';
 
 export type UserRole = 'USUARIO' | 'ENCARGADO' | 'DIRECTOR' | 'ADMINISTRADOR';
 
@@ -99,8 +99,8 @@ export const initialUsers: User[] = [
   {
     id: 'usr-admin',
     name: 'Administrador General',
-    email: 'admin@torre.gob.ar',
-    passwordHash: INITIAL_ADMIN_PASSWORD_HASH,
+    email: 'admin@ejercito.mil.ar',
+    passwordHash: INITIAL_ADMIN123_PASSWORD_HASH,
     role: 'ADMINISTRADOR',
     departmentId: '',
     avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
