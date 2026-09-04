@@ -121,7 +121,13 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.users && parsed.users.length > 0) setUsers(parsed.users);
+        if (parsed.users && parsed.users.length > 0) {
+          // Limpiar avatar de admin si venía con imagen por defecto
+          const cleanedUsers = parsed.users.map((u: User) =>
+            u.id === 'usr-admin' ? { ...u, avatarUrl: '' } : u
+          );
+          setUsers(cleanedUsers);
+        }
         if (parsed.departments) setDepartments(parsed.departments);
         if (parsed.stages) setStages(parsed.stages);
         if (parsed.projects) setProjects(parsed.projects);
@@ -129,7 +135,9 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         if (parsed.currentUserId) {
           const userList = (parsed.users && parsed.users.length > 0) ? parsed.users : initialUsers;
           const user = userList.find((u: User) => u.id === parsed.currentUserId);
-          if (user) setCurrentUser(user);
+          if (user) {
+            setCurrentUser(user.id === 'usr-admin' ? { ...user, avatarUrl: '' } : user);
+          }
         }
       }
     } catch (e) {
@@ -598,7 +606,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       passwordHash: pHash,
       role,
       departmentId,
-      avatarUrl: `https://images.unsplash.com/photo-${1500000000000 + Math.floor(Math.random() * 100000000)}?w=150&auto=format&fit=crop&q=80`
+      avatarUrl: ''
     };
     setUsers((prev) => [...prev, newUser]);
   };
