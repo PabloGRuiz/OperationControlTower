@@ -1,113 +1,137 @@
 "use client";
 
 import React, { useState } from 'react';
-import { Task } from '@/types/roadmap';
+import { Project, Stage } from '@/types/roadmap';
+import { useProjectControlTower } from '@/context/ProjectContext';
 import RoadmapCard from './RoadmapCard';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, Layers, Info } from 'lucide-react';
 
 interface RoadmapColumnProps {
-  title: string;
-  columnId: Task['columnId'];
-  tasks: Task[];
-  draggedTask: Task | null;
+  stage: Stage;
+  projects: Project[];
+  draggedProject: Project | null;
   isDraggingAnywhere: boolean;
-  onDragStart: (e: React.DragEvent, taskId: string) => void;
+  onDragStart: (e: React.DragEvent, projectId: string) => void;
   onDragEnd: () => void;
   onDragOver: (e: React.DragEvent) => void;
-  onDrop: (e: React.DragEvent, columnId: Task['columnId']) => void;
-  onAddTask: () => void;
+  onDropToStage: (projectId: string, stageId: string) => void;
+  onNewProjectInStage: (stageId: string) => void;
+  onOpenDetail: (project: Project) => void;
+  onOpenDerivation: (project: Project) => void;
+  onOpenUrgency: (project: Project) => void;
 }
 
 export default function RoadmapColumn({
-  title,
-  columnId,
-  tasks,
-  draggedTask,
+  stage,
+  projects,
+  draggedProject,
   isDraggingAnywhere,
   onDragStart,
   onDragEnd,
   onDragOver,
-  onDrop,
-  onAddTask
+  onDropToStage,
+  onNewProjectInStage,
+  onOpenDetail,
+  onOpenDerivation,
+  onOpenUrgency
 }: RoadmapColumnProps) {
+  const { currentUser } = useProjectControlTower();
   const [isOver, setIsOver] = useState(false);
 
-  const isCurrentOrigin = draggedTask?.columnId === columnId;
-  const showDropPanel = isDraggingAnywhere && !isCurrentOrigin;
+  // Can this user drag/drop or create projects?
+  const canDerive = currentUser.role !== 'USUARIO';
+  const canCreate = currentUser.role !== 'USUARIO';
+
+  const isCurrentOrigin = draggedProject?.stageId === stage.id;
+  const showDropPanel = isDraggingAnywhere && !isCurrentOrigin && canDerive;
 
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsOver(true);
+    if (canDerive) setIsOver(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    // Only set isOver false if leaving the column element itself
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
       setIsOver(false);
     }
   };
 
-  const handleInternalDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
     setIsOver(false);
-    onDrop(e, columnId);
+    const projectId = e.dataTransfer.getData('text/plain') || draggedProject?.id;
+    if (projectId && canDerive) {
+      onDropToStage(projectId, stage.id);
+    }
   };
 
   return (
     <div
-      className={`flex flex-col w-[350px] shrink-0 transition-colors duration-200 rounded-2xl p-2 ${
+      className={`flex flex-col w-[360px] shrink-0 transition-colors duration-200 rounded-2xl p-2.5 ${
         isOver
-          ? 'bg-blue-50/60 ring-2 ring-blue-400/50'
-          : 'bg-slate-100/70'
+          ? 'bg-blue-50/70 ring-2 ring-blue-500/60'
+          : 'bg-slate-100/70 border border-slate-200/50'
       }`}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={(e) => {
         onDragOver(e);
-        if (!isOver) setIsOver(true);
+        if (!isOver && canDerive) setIsOver(true);
       }}
-      onDrop={handleInternalDrop}
+      onDrop={handleDrop}
     >
-      {/* Column Header */}
-      <div className="flex items-center justify-between px-2 py-2 mb-2">
-        <div className="flex items-center gap-2.5">
-          <h3 className="text-[17px] font-bold text-slate-800 tracking-tight">
-            {title}
-          </h3>
-          <span className="text-xs font-bold bg-white text-slate-700 px-2.5 py-0.5 rounded-full shadow-2xs border border-slate-200/60">
-            {tasks.length}
-          </span>
+      {/* Cabecera de la Etapa */}
+      <div className="px-2 pt-1 pb-2 mb-1 border-b border-slate-200/60">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[16px] font-bold text-slate-900 tracking-tight">
+              {stage.title}
+            </h3>
+            <span className="text-xs font-bold bg-white text-slate-700 px-2.5 py-0.5 rounded-full shadow-2xs border border-slate-200">
+              {projects.length}
+            </span>
+          </div>
+
+          {canCreate && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onNewProjectInStage(stage.id)}
+              className="h-8 w-8 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-white transition-all shadow-2xs"
+              title="Aperturar nuevo proyecto en esta etapa"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          )}
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onAddTask}
-          className="h-8 w-8 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-white transition-all shadow-2xs"
-          title="Añadir nueva tarea"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+        <p className="text-[11px] text-slate-500 font-medium line-clamp-1 mt-0.5">
+          {stage.description}
+        </p>
       </div>
 
-      {/* Column Content */}
-      <div className="flex flex-col gap-3 min-h-[180px] p-1">
-        {tasks.map((task) => (
+      {/* Lista de Tarjetas de Proyecto */}
+      <div className="flex flex-col gap-3 min-h-[220px] p-1 overflow-y-auto max-h-[calc(100vh-230px)]">
+        {projects.map((project) => (
           <RoadmapCard
-            key={task.id}
-            task={task}
-            isBeingDragged={draggedTask?.id === task.id}
+            key={project.id}
+            project={project}
+            isBeingDragged={draggedProject?.id === project.id}
             onDragStart={onDragStart}
             onDragEnd={onDragEnd}
+            onOpenDetail={onOpenDetail}
+            onOpenDerivation={onOpenDerivation}
+            onOpenUrgency={onOpenUrgency}
           />
         ))}
 
-        {/* Dynamic Drop Panel with "+" when holding a card */}
+        {/* Panel Interactivo con signo + al arrastrar para Derivar */}
         {showDropPanel && (
           <div
             className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 transition-all duration-200 ${
               isOver
-                ? 'border-blue-500 bg-blue-100/70 scale-[1.01] shadow-md'
-                : 'border-blue-300/80 bg-blue-50/40 hover:border-blue-400'
+                ? 'border-blue-500 bg-blue-100/80 scale-[1.01] shadow-md'
+                : 'border-blue-300 bg-blue-50/40 hover:border-blue-400'
             }`}
           >
             <div
@@ -120,22 +144,25 @@ export default function RoadmapColumn({
               <Plus className={`${isOver ? 'w-6 h-6 stroke-[2.5]' : 'w-4 h-4'}`} />
             </div>
             <div className="text-center">
-              <span className={`text-xs font-bold ${isOver ? 'text-blue-800 text-sm' : 'text-blue-600'}`}>
-                {isOver ? `Soltar en ${title}` : `Mover a ${title}`}
+              <span className={`text-xs font-bold ${isOver ? 'text-blue-900 text-sm' : 'text-blue-600'}`}>
+                {isOver ? `Derivar expediente a ${stage.title}` : `Pase a ${stage.title}`}
               </span>
-              {isOver && draggedTask && (
-                <p className="text-[11px] text-blue-700/80 font-medium truncate max-w-[250px] mt-0.5">
-                  "{draggedTask.title}"
+              {isOver && draggedProject && (
+                <p className="text-[11px] text-blue-800 font-medium truncate max-w-[260px] mt-0.5">
+                  "{draggedProject.title}"
                 </p>
               )}
             </div>
           </div>
         )}
 
-        {tasks.length === 0 && !showDropPanel && (
-          <div className="flex flex-col items-center justify-center h-32 text-center text-sm text-slate-400 border-2 border-dashed border-slate-200/80 rounded-xl bg-white/40">
-            <span className="font-medium text-slate-500 text-xs">Sin tareas</span>
-            <span className="text-[11px] text-slate-400 mt-1">Arrastra aquí o usa el botón +</span>
+        {projects.length === 0 && !showDropPanel && (
+          <div className="flex flex-col items-center justify-center h-36 text-center text-slate-400 border-2 border-dashed border-slate-200/80 rounded-xl bg-white/40 p-4">
+            <Layers className="w-6 h-6 text-slate-300 mb-1" />
+            <span className="font-semibold text-slate-600 text-xs">Sin expedientes</span>
+            <span className="text-[11px] text-slate-400 mt-0.5">
+              {canDerive ? 'Arrastra un proyecto aquí para derivarlo' : 'No hay proyectos en esta etapa'}
+            </span>
           </div>
         )}
       </div>
