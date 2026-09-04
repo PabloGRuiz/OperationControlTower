@@ -53,7 +53,7 @@ export default function DerivationDialog({
     }
   }, [project, targetStageId]);
 
-  if (!project) return null;
+  if (!project || !currentUser) return null;
 
   const currentStage = stages.find((s) => s.id === project.stageId);
   const destinationStage = stages.find((s) => s.id === selectedStageId);

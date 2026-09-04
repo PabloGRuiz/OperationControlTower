@@ -40,8 +40,8 @@ export default function RoadmapColumn({
   const [isOver, setIsOver] = useState(false);
 
   // Can this user drag/drop or create projects?
-  const canDerive = currentUser.role !== 'USUARIO';
-  const canCreate = currentUser.role !== 'USUARIO';
+  const canDerive = Boolean(currentUser && currentUser.role !== 'USUARIO');
+  const canCreate = Boolean(currentUser && currentUser.role !== 'USUARIO');
 
   const isCurrentOrigin = draggedProject?.stageId === stage.id;
   const showDropPanel = isDraggingAnywhere && !isCurrentOrigin && canDerive;

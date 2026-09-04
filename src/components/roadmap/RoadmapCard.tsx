@@ -54,8 +54,8 @@ export default function RoadmapCard({
   // Permisos según Rol:
   // - Usuario: NO puede arrastrar/derivar
   // - Encargado, Director, Administrador: SI pueden arrastrar/derivar
-  const canDrag = currentUser.role !== 'USUARIO';
-  const isUserDept = currentUser.departmentId === project.currentDepartmentId;
+  const canDrag = Boolean(currentUser && currentUser.role !== 'USUARIO');
+  const isUserDept = Boolean(currentUser && currentUser.departmentId === project.currentDepartmentId);
 
   return (
     <Card
@@ -175,7 +175,7 @@ export default function RoadmapCard({
 
           <div className="flex items-center gap-1">
             {/* ACCIÓN ROL: USUARIO - Marcar como completado */}
-            {currentUser.role === 'USUARIO' && project.status === 'EN_PROCESO' && (
+            {currentUser?.role === 'USUARIO' && project.status === 'EN_PROCESO' && (
               <Button
                 size="sm"
                 variant="outline"
@@ -189,7 +189,7 @@ export default function RoadmapCard({
             )}
 
             {/* ACCIÓN ROL: ENCARGADO / ADMIN - Controlar */}
-            {(currentUser.role === 'ENCARGADO' || currentUser.role === 'ADMINISTRADOR') &&
+            {(currentUser?.role === 'ENCARGADO' || currentUser?.role === 'ADMINISTRADOR') &&
               project.status === 'COMPLETADO_POR_USUARIO' && (
                 <Button
                   size="sm"
@@ -203,7 +203,7 @@ export default function RoadmapCard({
               )}
 
             {/* ACCIÓN ROL: ENCARGADO / ADMIN - Derivar */}
-            {(currentUser.role === 'ENCARGADO' || currentUser.role === 'ADMINISTRADOR') && (
+            {(currentUser?.role === 'ENCARGADO' || currentUser?.role === 'ADMINISTRADOR') && (
               <Button
                 size="sm"
                 variant="outline"
@@ -217,7 +217,7 @@ export default function RoadmapCard({
             )}
 
             {/* ACCIÓN ROL: DIRECTOR - Cambiar Urgencia */}
-            {(currentUser.role === 'DIRECTOR' || currentUser.role === 'ADMINISTRADOR') && (
+            {(currentUser?.role === 'DIRECTOR' || currentUser?.role === 'ADMINISTRADOR') && (
               <Button
                 size="sm"
                 variant="outline"

@@ -40,7 +40,7 @@ export default function NewProjectDialog({
   const [description, setDescription] = useState('');
   const [urgency, setUrgency] = useState<UrgencyLevel>('ALTA');
   const [targetDepartmentId, setTargetDepartmentId] = useState(
-    defaultDepartmentId || currentUser.departmentId || ''
+    defaultDepartmentId || currentUser?.departmentId || ''
   );
   const [observation, setObservation] = useState('');
 
@@ -154,6 +154,12 @@ export default function NewProjectDialog({
             />
           </div>
 
+          {departments.length === 0 && (
+            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold rounded-xl">
+              No hay departamentos dados de alta. El Administrador debe crear las áreas operativas en la pestaña Administración antes de aperturar expedientes.
+            </div>
+          )}
+
           <DialogFooter className="pt-2 gap-2">
             <Button
               type="button"
@@ -165,7 +171,8 @@ export default function NewProjectDialog({
             </Button>
             <Button
               type="submit"
-              className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold h-10 shadow-sm"
+              disabled={departments.length === 0}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold h-10 shadow-sm disabled:opacity-50"
             >
               Aperturar Proyecto
             </Button>

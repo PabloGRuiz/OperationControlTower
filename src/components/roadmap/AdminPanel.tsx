@@ -12,8 +12,10 @@ import {
   Save,
   RotateCcw,
   CheckCircle2,
-  ShieldCheck,
-  Edit3
+  Trash2,
+  KeyRound,
+  Edit3,
+  AlertCircle
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -35,9 +37,11 @@ export default function AdminPanel() {
     users,
     updateStageTitle,
     addDepartment,
+    deleteDepartment,
     addUser,
+    deleteUser,
     updateUserRole,
-    resetDemoData
+    resetCleanDatabase
   } = useProjectControlTower();
 
   const [activeTab, setActiveTab] = useState<'stages' | 'departments' | 'users'>('stages');
@@ -55,10 +59,12 @@ export default function AdminPanel() {
   // Estado para nuevo usuario
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState<UserRole>('USUARIO');
   const [newUserDeptId, setNewUserDeptId] = useState('');
 
   const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleStartEditStage = (stage: typeof stages[0]) => {
     setEditingStageId(stage.id);
@@ -76,6 +82,7 @@ export default function AdminPanel() {
 
   const handleCreateDept = (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMsg('');
     if (!newDeptName.trim() || !newDeptCode.trim()) return;
     addDepartment(newDeptName.trim(), newDeptCode.trim(), newDeptColor);
     setNewDeptName('');
@@ -86,11 +93,28 @@ export default function AdminPanel() {
 
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUserName.trim() || !newUserEmail.trim() || !newUserDeptId) return;
-    addUser(newUserName.trim(), newUserEmail.trim(), newUserRole, newUserDeptId);
+    setErrorMsg('');
+    if (!newUserName.trim() || !newUserEmail.trim() || !newUserPassword.trim()) {
+      setErrorMsg('Todos los campos son obligatorios, incluyendo la contraseña inicial.');
+      return;
+    }
+
+    if (newUserRole !== 'ADMINISTRADOR' && departments.length === 0) {
+      setErrorMsg('Debes crear al menos un departamento antes de asignar usuarios.');
+      return;
+    }
+
+    addUser(
+      newUserName.trim(),
+      newUserEmail.trim(),
+      newUserPassword.trim(),
+      newUserRole,
+      newUserDeptId
+    );
     setNewUserName('');
     setNewUserEmail('');
-    setSuccessMsg('Cuenta de usuario creada con éxito.');
+    setNewUserPassword('');
+    setSuccessMsg('Cuenta de funcionario creada con éxito. Ya puede iniciar sesión.');
     setTimeout(() => setSuccessMsg(''), 3000);
   };
 
@@ -115,41 +139,48 @@ export default function AdminPanel() {
         <Button
           variant="outline"
           onClick={() => {
-            if (confirm('¿Deseas restablecer todos los datos iniciales de prueba?')) {
-              resetDemoData();
+            if (confirm('¿Deseas restablecer la base de datos a su estado limpio inicial (solo cuenta Admin)?')) {
+              resetCleanDatabase();
             }
           }}
-          className="text-xs font-semibold text-slate-600 gap-1.5 h-10 rounded-xl"
+          className="text-xs font-semibold text-rose-600 border-rose-200 hover:bg-rose-50 gap-1.5 h-10 rounded-xl"
         >
           <RotateCcw className="w-3.5 h-3.5" />
-          Restablecer Datos Demo
+          Reiniciar Base de Datos Limpia
         </Button>
       </div>
 
       {successMsg && (
         <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold px-4 py-3 rounded-xl flex items-center gap-2 animate-in fade-in">
-          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           {successMsg}
         </div>
       )}
 
+      {errorMsg && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold px-4 py-3 rounded-xl flex items-center gap-2 animate-in fade-in">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+          {errorMsg}
+        </div>
+      )}
+
       {/* Selector de Pestañas del Admin */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveTab('stages')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
             activeTab === 'stages'
               ? 'bg-purple-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <Layers className="w-4 h-4" />
-          1. Columnas y Etapas del Tablero ({stages.length})
+          1. Columnas y Etapas ({stages.length})
         </button>
 
         <button
           onClick={() => setActiveTab('departments')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
             activeTab === 'departments'
               ? 'bg-purple-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100'
@@ -161,14 +192,14 @@ export default function AdminPanel() {
 
         <button
           onClick={() => setActiveTab('users')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
             activeTab === 'users'
               ? 'bg-purple-600 text-white shadow-xs'
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
           <Users className="w-4 h-4" />
-          3. Usuarios y Roles ({users.length})
+          3. Usuarios y Cuentas ({users.length})
         </button>
       </div>
 
@@ -260,18 +291,42 @@ export default function AdminPanel() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
             <h3 className="text-sm font-bold text-slate-800">Departamentos y Áreas Operativas</h3>
-            <div className="divide-y divide-slate-100">
-              {departments.map((dept) => (
-                <div key={dept.id} className="py-3 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${dept.color}`}>
-                      {dept.code}
-                    </span>
-                    <span className="text-sm font-semibold text-slate-800">{dept.name}</span>
+            {departments.length === 0 ? (
+              <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-xl space-y-2">
+                <Building2 className="w-8 h-8 mx-auto text-slate-300" />
+                <p className="text-xs font-bold text-slate-700">No hay departamentos dados de alta</p>
+                <p className="text-[11px] text-slate-400">
+                  Utiliza el formulario de la derecha para dar de alta las áreas oficiales (ej: Presupuesto, Legal, Licitaciones).
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {departments.map((dept) => (
+                  <div key={dept.id} className="py-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${dept.color}`}>
+                        {dept.code}
+                      </span>
+                      <span className="text-sm font-semibold text-slate-800">{dept.name}</span>
+                    </div>
+
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => {
+                        if (confirm(`¿Eliminar el departamento "${dept.name}"?`)) {
+                          deleteDepartment(dept.id);
+                        }
+                      }}
+                      className="h-8 w-8 text-slate-400 hover:text-rose-600 rounded-lg"
+                      title="Eliminar departamento"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
@@ -285,7 +340,7 @@ export default function AdminPanel() {
                 <Input
                   value={newDeptName}
                   onChange={(e) => setNewDeptName(e.target.value)}
-                  placeholder="Ej: Auditoría y Control Interno"
+                  placeholder="Ej: Presupuesto y Finanzas"
                   className="text-xs h-9 rounded-lg"
                   required
                 />
@@ -296,7 +351,7 @@ export default function AdminPanel() {
                 <Input
                   value={newDeptCode}
                   onChange={(e) => setNewDeptCode(e.target.value)}
-                  placeholder="Ej: AUDITORIA"
+                  placeholder="Ej: PRESUPUESTO"
                   className="text-xs h-9 rounded-lg uppercase"
                   required
                 />
@@ -309,18 +364,19 @@ export default function AdminPanel() {
                     <SelectValue placeholder="Color" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="bg-cyan-100 text-cyan-800 border-cyan-300">Cyan</SelectItem>
-                    <SelectItem value="bg-teal-100 text-teal-800 border-teal-300">Verde Azulado</SelectItem>
+                    <SelectItem value="bg-emerald-100 text-emerald-800 border-emerald-300">Verde Esmeralda</SelectItem>
+                    <SelectItem value="bg-blue-100 text-blue-800 border-blue-300">Azul Institucional</SelectItem>
+                    <SelectItem value="bg-purple-100 text-purple-800 border-purple-300">Púrpura Legal</SelectItem>
+                    <SelectItem value="bg-amber-100 text-amber-800 border-amber-300">Ámbar Operaciones</SelectItem>
+                    <SelectItem value="bg-indigo-100 text-indigo-800 border-indigo-300">Índigo Sistemas</SelectItem>
                     <SelectItem value="bg-rose-100 text-rose-800 border-rose-300">Rosa Salmón</SelectItem>
-                    <SelectItem value="bg-orange-100 text-orange-800 border-orange-300">Naranja</SelectItem>
-                    <SelectItem value="bg-violet-100 text-violet-800 border-violet-300">Violeta</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <Button
                 type="submit"
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold h-9 rounded-lg"
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold h-9 rounded-lg shadow-sm"
               >
                 Agregar Departamento
               </Button>
@@ -334,16 +390,17 @@ export default function AdminPanel() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
             <h3 className="text-sm font-bold text-slate-800">
-              Gestión de Cuentas y Asignación de Roles
+              Gestión de Cuentas y Contraseñas
             </h3>
             <p className="text-xs text-slate-500">
-              Puedes reasignar roles y departamentos a cualquier funcionario de forma inmediata.
+              Administra los funcionarios, sus roles y sus contraseñas de acceso local.
             </p>
 
             <div className="divide-y divide-slate-100">
               {users.map((user) => {
+                const isMasterAdmin = user.id === 'usr-admin';
                 return (
-                  <div key={user.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div key={user.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <Avatar className="w-9 h-9 border border-slate-200">
                         <AvatarImage src={user.avatarUrl} alt={user.name} />
@@ -352,8 +409,18 @@ export default function AdminPanel() {
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <div className="text-sm font-bold text-slate-900">{user.name}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-slate-900">{user.name}</span>
+                          {isMasterAdmin && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
+                              Admin Maestro
+                            </span>
+                          )}
+                        </div>
                         <div className="text-xs text-slate-400">{user.email}</div>
+                        <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                          Pass: <strong className="text-slate-700">{user.password || 'admin'}</strong>
+                        </div>
                       </div>
                     </div>
 
@@ -361,6 +428,7 @@ export default function AdminPanel() {
                       {/* Selector de Rol */}
                       <Select
                         value={user.role}
+                        disabled={isMasterAdmin}
                         onValueChange={(newRole) =>
                           newRole && updateUserRole(user.id, newRole as UserRole, user.departmentId)
                         }
@@ -378,15 +446,17 @@ export default function AdminPanel() {
 
                       {/* Selector de Departamento */}
                       <Select
-                        value={user.departmentId}
+                        value={user.departmentId || ''}
+                        disabled={isMasterAdmin}
                         onValueChange={(newDept) =>
                           newDept && updateUserRole(user.id, user.role, newDept)
                         }
                       >
-                        <SelectTrigger className="h-8 text-xs font-medium w-44 bg-slate-50 border-slate-200">
-                          <SelectValue />
+                        <SelectTrigger className="h-8 text-xs font-medium w-40 bg-slate-50 border-slate-200">
+                          <SelectValue placeholder="Sin Depto" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="">Sin Depto</SelectItem>
                           {departments.map((d) => (
                             <SelectItem key={d.id} value={d.id} className="text-xs">
                               {d.name}
@@ -394,6 +464,22 @@ export default function AdminPanel() {
                           ))}
                         </SelectContent>
                       </Select>
+
+                      {!isMasterAdmin && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => {
+                            if (confirm(`¿Eliminar la cuenta de "${user.name}"?`)) {
+                              deleteUser(user.id);
+                            }
+                          }}
+                          className="h-8 w-8 text-slate-400 hover:text-rose-600 rounded-lg shrink-0"
+                          title="Eliminar usuario"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 );
@@ -419,7 +505,7 @@ export default function AdminPanel() {
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs font-bold text-slate-700">Correo Institucional</Label>
+                <Label className="text-xs font-bold text-slate-700">Correo Institucional (Login)</Label>
                 <Input
                   value={newUserEmail}
                   onChange={(e) => setNewUserEmail(e.target.value)}
@@ -431,15 +517,27 @@ export default function AdminPanel() {
               </div>
 
               <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">Contraseña de Acceso</Label>
+                <Input
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  placeholder="Contraseña inicial"
+                  type="text"
+                  className="text-xs h-9 rounded-lg font-mono"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-700">Rol Inicial</Label>
                 <Select value={newUserRole} onValueChange={(v) => v && setNewUserRole(v as UserRole)}>
                   <SelectTrigger className="text-xs h-9 rounded-lg">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="USUARIO">Usuario (Operativo)</SelectItem>
+                    <SelectItem value="USUARIO">Usuario (Auxiliar / Operativo)</SelectItem>
                     <SelectItem value="ENCARGADO">Encargado (Jefe de Área)</SelectItem>
-                    <SelectItem value="DIRECTOR">Director (Estratégico)</SelectItem>
+                    <SelectItem value="DIRECTOR">Director (Dirección General)</SelectItem>
                     <SelectItem value="ADMINISTRADOR">Administrador (Sistemas)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -447,11 +545,12 @@ export default function AdminPanel() {
 
               <div className="space-y-1">
                 <Label className="text-xs font-bold text-slate-700">Departamento Asignado</Label>
-                <Select value={newUserDeptId} onValueChange={(v) => v && setNewUserDeptId(v)} required>
+                <Select value={newUserDeptId} onValueChange={(v) => v && setNewUserDeptId(v)}>
                   <SelectTrigger className="text-xs h-9 rounded-lg">
                     <SelectValue placeholder="Selecciona depto" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="">Sin Departamento</SelectItem>
                     {departments.map((d) => (
                       <SelectItem key={d.id} value={d.id} className="text-xs">
                         {d.name}
@@ -463,9 +562,9 @@ export default function AdminPanel() {
 
               <Button
                 type="submit"
-                className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold h-9 rounded-lg"
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold h-9 rounded-lg shadow-sm"
               >
-                Crear Usuario
+                Crear Cuenta de Funcionario
               </Button>
             </form>
           </div>

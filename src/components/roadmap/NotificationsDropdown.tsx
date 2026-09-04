@@ -32,8 +32,8 @@ export default function NotificationsDropdown({ onSelectProject }: Notifications
   // Filtrar notificaciones dirigidas al depto del usuario, a su rol o globales
   const relevantNotifications = notifications.filter(
     (n) =>
-      (!n.recipientDepartmentId || n.recipientDepartmentId === currentUser.departmentId) &&
-      (!n.recipientRole || n.recipientRole === currentUser.role)
+      (!currentUser || !n.recipientDepartmentId || n.recipientDepartmentId === currentUser.departmentId) &&
+      (!currentUser || !n.recipientRole || n.recipientRole === currentUser.role)
   );
 
   const getIcon = (type: string) => {

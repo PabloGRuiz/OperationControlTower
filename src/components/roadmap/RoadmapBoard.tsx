@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Project, Stage, UserRole } from '@/types/roadmap';
 import { useProjectControlTower } from '@/context/ProjectContext';
+import LoginPage from '@/components/auth/LoginPage';
 import RoadmapColumn from './RoadmapColumn';
 import DerivationDialog from './DerivationDialog';
 import ProjectDetailDialog from './ProjectDetailDialog';
@@ -20,33 +21,24 @@ import {
   Settings,
   Shield,
   Layers,
-  UserCheck,
   Building2,
-  ChevronDown,
   Info,
   CheckCircle2,
-  Sparkles,
   Flame,
-  AlertTriangle
+  LogOut,
+  ArrowRight,
+  FolderPlus
 } from 'lucide-react';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select';
 
 export default function RoadmapBoard() {
   const {
     currentUser,
-    users,
     departments,
     stages,
     projects,
     activeView,
     setActiveView,
-    switchUser
+    logout
   } = useProjectControlTower();
 
   // Estados de Drag and Drop
@@ -65,6 +57,11 @@ export default function RoadmapBoard() {
 
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [defaultStageForNewProject, setDefaultStageForNewProject] = useState<string | undefined>();
+
+  // Si no hay usuario autenticado, renderizar la pantalla de Login
+  if (!currentUser) {
+    return <LoginPage />;
+  }
 
   const draggedProject = projects.find((p) => p.id === draggedProjectId) || null;
   const currentDept = departments.find((d) => d.id === currentUser.departmentId);
@@ -89,7 +86,6 @@ export default function RoadmapBoard() {
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
 
-    // Si se suelta en la misma etapa no hace falta derivación
     if (project.stageId === stageId) {
       setDraggedProjectId(null);
       return;
@@ -188,7 +184,7 @@ export default function RoadmapBoard() {
           </nav>
         </div>
 
-        {/* Lado Derecho: Selector de Usuario / Rol & Notificaciones */}
+        {/* Lado Derecho: Acciones, Notificaciones y Perfil */}
         <div className="flex items-center gap-3 self-end lg:self-auto flex-wrap">
           {/* Botón Nuevo Proyecto */}
           {canCreateProject && (
@@ -213,57 +209,42 @@ export default function RoadmapBoard() {
             }}
           />
 
-          {/* SIMULADOR DE ROLES / SELECTOR DE USUARIO ACTIVO */}
-          <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
-            <div className="text-right hidden sm:block">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                Sesión Activa ({currentUser.role})
-              </span>
-              <span className="text-xs font-bold text-slate-900 block leading-tight">
-                {currentUser.name}
-              </span>
-              <span className="text-[10px] text-slate-500 font-medium block">
-                {currentDept?.name}
+          {/* PERFIL DE USUARIO ACTIVO Y LOGOUT */}
+          <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
+            <Avatar className="w-9 h-9 border-2 border-white shadow-2xs ring-1 ring-slate-200">
+              <AvatarImage src={currentUser.avatarUrl} alt={currentUser.name} />
+              <AvatarFallback className="text-xs font-bold bg-slate-100 text-slate-800">
+                {currentUser.name.substring(0, 2).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="hidden sm:block">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-slate-900 leading-tight">
+                  {currentUser.name}
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                  {currentUser.role}
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-500 font-medium block">
+                {currentDept?.name || 'Administración Central'}
               </span>
             </div>
 
-            <Select value={currentUser.id} onValueChange={(v) => v && switchUser(v)}>
-              <SelectTrigger className="h-10 px-2.5 rounded-xl bg-slate-100/80 border-slate-200 hover:bg-slate-100 text-xs font-bold gap-2">
-                <Avatar className="w-6 h-6 border border-white">
-                  <AvatarImage src={currentUser.avatarUrl} alt={currentUser.name} />
-                  <AvatarFallback className="text-[9px] font-bold">
-                    {currentUser.name.substring(0, 2)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="hidden md:inline text-xs font-bold text-slate-800">
-                  Cambiar Rol Demo
-                </span>
-              </SelectTrigger>
-              <SelectContent className="rounded-xl w-64">
-                <div className="px-2 py-1.5 text-[10px] font-bold text-slate-400 uppercase">
-                  Simular Usuario / Rol
-                </div>
-                {users.map((u) => {
-                  const dept = departments.find((d) => d.id === u.departmentId);
-                  return (
-                    <SelectItem key={u.id} value={u.id} className="text-xs py-2">
-                      <div className="flex items-center gap-2">
-                        <Avatar className="w-6 h-6">
-                          <AvatarImage src={u.avatarUrl} />
-                          <AvatarFallback className="text-[9px]">{u.name.substring(0, 2)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <div className="font-bold text-slate-900">{u.name}</div>
-                          <div className="text-[10px] text-blue-700 font-semibold">
-                            {u.role} - {dept?.code}
-                          </div>
-                        </div>
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                if (confirm('¿Deseas cerrar tu sesión actual?')) {
+                  logout();
+                }
+              }}
+              className="h-9 w-9 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors ml-1"
+              title="Cerrar Sesión"
+            >
+              <LogOut className="w-4 h-4" />
+            </Button>
           </div>
         </div>
       </header>
@@ -285,7 +266,7 @@ export default function RoadmapBoard() {
             <>
               <Info className="w-4 h-4 text-amber-600 shrink-0" />
               <span>
-                <strong>Rol Usuario ({currentDept?.name}):</strong> Trabajas en los proyectos de tu área. Al finalizar, presiona <strong>"Marcar Completada"</strong> para elevar el aviso a tu Encargado. <em>(No tienes permisos para arrastrar o derivar proyectos)</em>.
+                <strong>Rol Usuario ({currentDept?.name || 'Operativo'}):</strong> Trabajas en los proyectos de tu área. Al finalizar una tarea, presiona <strong>"Marcar Completada"</strong> para notificar a tu Encargado.
               </span>
             </>
           )}
@@ -294,7 +275,7 @@ export default function RoadmapBoard() {
             <>
               <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
               <span>
-                <strong>Rol Encargado ({currentDept?.name}):</strong> Responsable de revisar tareas completadas, marcarlas como <strong>Controladas</strong> y <strong>derivar proyectos</strong> (arrastrando tarjetas o con el botón Derivar) registrando observaciones obligatorias.
+                <strong>Rol Encargado ({currentDept?.name || 'Área'}):</strong> Responsable de controlar tareas completadas y <strong>derivar proyectos</strong> entre etapas y departamentos con observación obligatoria.
               </span>
             </>
           )}
@@ -303,7 +284,7 @@ export default function RoadmapBoard() {
             <>
               <Flame className="w-4 h-4 text-amber-400 shrink-0" />
               <span>
-                <strong>Rol Dirección General:</strong> Supervisión global estratégica de todas las etapas. Tienes potestad para <strong>modificar niveles de urgencia</strong> (notificando a los equipos) y aperturar nuevos expedientes gubernamentales.
+                <strong>Rol Dirección General:</strong> Supervisión global estratégica. Puedes modificar el <strong>nivel de urgencia</strong> de expedientes y aperturar nuevos proyectos gubernamentales.
               </span>
             </>
           )}
@@ -312,7 +293,7 @@ export default function RoadmapBoard() {
             <>
               <Settings className="w-4 h-4 text-purple-600 shrink-0" />
               <span>
-                <strong>Rol Administrador Maestro:</strong> Control total. Puedes renombrar columnas/etapas en la pestaña <strong>Administración</strong>, crear departamentos y asignar roles a funcionarios.
+                <strong>Rol Administrador Maestro:</strong> Control total. Puedes dar de alta Departamentos, crear Cuentas de Funcionarios y personalizar los nombres de las Columnas en la pestaña <strong>Administración</strong>.
               </span>
             </>
           )}
@@ -329,28 +310,60 @@ export default function RoadmapBoard() {
       {/* CONTENIDO PRINCIPAL SEGÚN PESTAÑA */}
       {activeView === 'board' && (
         <div className="flex-1 overflow-x-auto overflow-y-hidden">
-          <div className="flex flex-row gap-5 p-6 min-h-full items-start w-max">
-            {stages.map((stage) => {
-              const stageProjects = projects.filter((p) => p.stageId === stage.id);
-              return (
-                <RoadmapColumn
-                  key={stage.id}
-                  stage={stage}
-                  projects={stageProjects}
-                  draggedProject={draggedProject}
-                  isDraggingAnywhere={Boolean(draggedProjectId)}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={handleDragOver}
-                  onDropToStage={handleDropToStage}
-                  onNewProjectInStage={handleNewProjectInStage}
-                  onOpenDetail={handleOpenDetail}
-                  onOpenDerivation={handleOpenDerivation}
-                  onOpenUrgency={handleOpenUrgency}
-                />
-              );
-            })}
-          </div>
+          {departments.length === 0 ? (
+            /* Guía de Inicialización para Base Limpia */
+            <div className="p-8 max-w-2xl mx-auto mt-12 bg-white border border-slate-200 rounded-2xl shadow-sm text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-slate-900">
+                  ¡Base de Datos Limpia Inicializada!
+                </h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Para comenzar a aperturar proyectos y habilitar derivaciones, el Administrador debe dar de alta los departamentos oficiales de la organización.
+                </p>
+              </div>
+
+              {currentUser.role === 'ADMINISTRADOR' ? (
+                <Button
+                  onClick={() => setActiveView('admin')}
+                  className="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl h-10 px-5 gap-2 shadow-sm"
+                >
+                  <Settings className="w-4 h-4" />
+                  Ir a Panel de Administración y Crear Departamentos
+                  <ArrowRight className="w-4 h-4" />
+                </Button>
+              ) : (
+                <p className="text-xs font-semibold text-slate-400">
+                  Contacta al Administrador del Sistema para la configuración inicial de departamentos.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-row gap-5 p-6 min-h-full items-start w-max">
+              {stages.map((stage) => {
+                const stageProjects = projects.filter((p) => p.stageId === stage.id);
+                return (
+                  <RoadmapColumn
+                    key={stage.id}
+                    stage={stage}
+                    projects={stageProjects}
+                    draggedProject={draggedProject}
+                    isDraggingAnywhere={Boolean(draggedProjectId)}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={handleDragOver}
+                    onDropToStage={handleDropToStage}
+                    onNewProjectInStage={handleNewProjectInStage}
+                    onOpenDetail={handleOpenDetail}
+                    onOpenDerivation={handleOpenDerivation}
+                    onOpenUrgency={handleOpenUrgency}
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
