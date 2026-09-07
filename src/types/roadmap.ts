@@ -4,7 +4,7 @@ export type UserRole = 'USUARIO' | 'ENCARGADO' | 'DIRECTOR' | 'ADMINISTRADOR';
 
 export type UrgencyLevel = 'BAJA' | 'MEDIA' | 'ALTA' | 'URGENTE';
 
-export type ProjectStatus = 'EN_PROCESO' | 'COMPLETADO_POR_USUARIO' | 'CONTROLADO';
+export type ProjectStatus = 'PENDIENTE_APROBACION' | 'EN_PROCESO' | 'COMPLETADO_POR_USUARIO' | 'CONTROLADO';
 
 export interface Department {
   id: string;
@@ -30,6 +30,20 @@ export interface Stage {
   description: string;
 }
 
+export interface ProjectAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  dataUrl: string;
+  uploadedAt: string;
+  uploadedBy: {
+    id: string;
+    name: string;
+    role: UserRole;
+  };
+}
+
 export interface DerivationHistoryItem {
   id: string;
   timestamp: string;
@@ -44,7 +58,7 @@ export interface DerivationHistoryItem {
     avatarUrl: string;
   };
   observation: string;
-  actionType: 'CREACION' | 'DERIVACION' | 'COMPLETADO' | 'CONTROLADO' | 'CAMBIO_URGENCIA';
+  actionType: 'CREACION' | 'APROBACION' | 'DERIVACION' | 'COMPLETADO' | 'CONTROLADO' | 'CAMBIO_URGENCIA' | 'ADJUNTO';
 }
 
 export interface Project {
@@ -66,6 +80,7 @@ export interface Project {
   updatedAt: string;
   lastObservation: string;
   history: DerivationHistoryItem[];
+  attachments?: ProjectAttachment[];
 }
 
 export interface Notification {
@@ -79,7 +94,7 @@ export interface Notification {
   projectTitle: string;
   timestamp: string;
   read: boolean;
-  type: 'DERIVACION' | 'COMPLETADO' | 'CONTROLADO' | 'URGENCIA' | 'NUEVO_PROYECTO';
+  type: 'DERIVACION' | 'COMPLETADO' | 'CONTROLADO' | 'URGENCIA' | 'NUEVO_PROYECTO' | 'PROYECTO_APROBADO';
 }
 
 // -------------------------------------------------------------

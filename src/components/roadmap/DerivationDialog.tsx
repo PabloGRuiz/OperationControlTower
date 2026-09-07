@@ -20,8 +20,10 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import { ArrowRight, Send, ShieldAlert, Building2, Layers } from 'lucide-react';
+import { ArrowRight, Send, ShieldAlert, Building2, Layers, Paperclip, X, FileText } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import AttachmentUploader, { StagedAttachment } from './AttachmentUploader';
+import { formatFileSize, getFileCategory } from '@/lib/attachmentUtils';
 
 interface DerivationDialogProps {
   isOpen: boolean;
@@ -42,6 +44,7 @@ export default function DerivationDialog({
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
   const [observation, setObservation] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [stagedAttachments, setStagedAttachments] = useState<StagedAttachment[]>([]);
 
   useEffect(() => {
     if (project) {
@@ -50,6 +53,7 @@ export default function DerivationDialog({
       setSelectedDepartmentId(project.currentDepartmentId);
       setObservation('');
       setError('');
+      setStagedAttachments([]);
     }
   }, [project, targetStageId]);
 
@@ -70,13 +74,19 @@ export default function DerivationDialog({
       return;
     }
 
-    deriveProject(project.id, selectedStageId, selectedDepartmentId, observation.trim());
+    deriveProject(
+      project.id,
+      selectedStageId,
+      selectedDepartmentId,
+      observation.trim(),
+      stagedAttachments.length > 0 ? stagedAttachments : undefined
+    );
     setIsOpen(false);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-[580px] p-6 rounded-2xl">
+      <DialogContent className="sm:max-w-[580px] p-6 rounded-2xl max-h-[92vh] overflow-y-auto">
         <DialogHeader className="space-y-1 pb-2 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md font-mono">
@@ -165,7 +175,7 @@ export default function DerivationDialog({
                 if (error) setError('');
               }}
               placeholder="Escribe aquí las directivas, detalles de plazos, partidas a afectar o instrucciones para el área que recibe..."
-              className="min-h-[100px] text-sm resize-none rounded-xl"
+              className="min-h-[90px] text-sm resize-none rounded-xl"
               required
             />
             {error && (
@@ -173,6 +183,75 @@ export default function DerivationDialog({
                 <ShieldAlert className="w-3.5 h-3.5" />
                 {error}
               </p>
+            )}
+          </div>
+
+          {/* Documentos y Archivos Adjuntos al Pase (Opcional) */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <Paperclip className="w-3.5 h-3.5 text-blue-600" />
+                Documentos y Archivos Adjuntos al Pase (Opcional)
+              </Label>
+              {stagedAttachments.length > 0 && (
+                <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                  {stagedAttachments.length} archivo(s) seleccionado(s)
+                </span>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-500">
+              Adjunta notas de pase, informes técnicos, dictámenes, planillas o imágenes para respaldar esta derivación.
+            </p>
+
+            <AttachmentUploader
+              multiple={true}
+              onFilesSelected={(newFiles: StagedAttachment[]) => {
+                setStagedAttachments((prev: StagedAttachment[]) => [...prev, ...newFiles]);
+              }}
+              label="Arrastra documentos aquí o haz clic para examinar (PDF, Word, Excel, Planillas, Imágenes)..."
+            />
+
+            {stagedAttachments.length > 0 && (
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {stagedAttachments.map((file: StagedAttachment, idx: number) => {
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-200/80 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1 mr-2">
+                        <div className="w-7 h-7 rounded-lg bg-blue-100/70 text-blue-700 flex items-center justify-center shrink-0 border border-blue-200/60 font-bold">
+                          <FileText className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-slate-800 truncate" title={file.name}>
+                            {file.name}
+                          </p>
+                          <p className="text-[10px] text-slate-400">
+                            {formatFileSize(file.size)} • Se incorporará al expediente
+                          </p>
+                        </div>
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() =>
+                          setStagedAttachments((prev: StagedAttachment[]) =>
+                            prev.filter((_, i: number) => i !== idx)
+                          )
+                        }
+                        className="h-6 w-6 p-0 text-slate-400 hover:text-rose-600 rounded-lg shrink-0"
+                        title="Quitar archivo"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 

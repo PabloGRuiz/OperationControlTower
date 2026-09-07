@@ -1,0 +1,13 @@
+services:
+  operation-control-tower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: operation-control-tower-app
+    restart: unless-stopped
+    ports:
+      - "3015:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOSTNAME=0.0.0.0

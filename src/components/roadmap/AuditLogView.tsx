@@ -25,14 +25,20 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
+import { isProjectCompetentForUser } from '@/lib/projectPermissions';
 
 export default function AuditLogView() {
-  const { projects, stages, departments } = useProjectControlTower();
+  const { projects, stages, departments, currentUser } = useProjectControlTower();
   const [search, setSearch] = useState('');
   const [selectedDept, setSelectedDept] = useState('ALL');
 
-  // Aplanar todos los historiales de todos los proyectos y ordenarlos por fecha descendente
-  const allLogs = projects.flatMap((project) =>
+  const isSupervisorGlobal = currentUser?.role === 'ADMINISTRADOR' || currentUser?.role === 'DIRECTOR';
+  const relevantProjects = isSupervisorGlobal
+    ? projects
+    : projects.filter((p) => isProjectCompetentForUser(p, currentUser));
+
+  // Aplanar todos los historiales de los proyectos correspondientes y ordenarlos por fecha descendente
+  const allLogs = relevantProjects.flatMap((project) =>
     project.history.map((item) => ({
       ...item,
       projectCode: project.code,

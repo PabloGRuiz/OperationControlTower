@@ -17,7 +17,9 @@ import {
   Edit3,
   AlertCircle,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -44,11 +46,16 @@ export default function AdminPanel() {
     stages,
     departments,
     users,
+    projects,
+    addStage,
     updateStageTitle,
+    deleteStage,
+    moveStage,
     addDepartment,
     deleteDepartment,
     addUser,
     deleteUser,
+    updateUserName,
     updateUserRole,
     updateUserPassword,
     resetCleanDatabase
@@ -60,6 +67,25 @@ export default function AdminPanel() {
   const [editingStageId, setEditingStageId] = useState<string | null>(null);
   const [stageTitle, setStageTitle] = useState('');
   const [stageDesc, setStageDesc] = useState('');
+
+  // Estado para edición de nombre de usuario
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editingUserName, setEditingUserName] = useState('');
+
+  const handleStartEditUser = (user: User) => {
+    setEditingUserId(user.id);
+    setEditingUserName(user.name);
+  };
+
+  const handleSaveUserName = (userId: string) => {
+    if (!editingUserName.trim()) return;
+    updateUserName(userId, editingUserName.trim());
+    setEditingUserId(null);
+  };
+
+  // Estado para nueva etapa
+  const [newStageTitle, setNewStageTitle] = useState('');
+  const [newStageDesc, setNewStageDesc] = useState('');
 
   // Estado para nuevo departamento
   const [newDeptName, setNewDeptName] = useState('');
@@ -93,6 +119,42 @@ export default function AdminPanel() {
     setEditingStageId(null);
     setSuccessMsg('Etapa de columna actualizada con éxito.');
     setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleCreateStage = (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    if (!newStageTitle.trim()) {
+      setErrorMsg('El título de la etapa es obligatorio.');
+      return;
+    }
+    const res = addStage(newStageTitle.trim(), newStageDesc.trim());
+    if (!res.success) {
+      setErrorMsg(res.error || 'Error al crear la etapa');
+      return;
+    }
+    setNewStageTitle('');
+    setNewStageDesc('');
+    setSuccessMsg('Etapa / Columna creada exitosamente.');
+    setTimeout(() => setSuccessMsg(''), 3000);
+  };
+
+  const handleDeleteStage = (stageId: string, title: string) => {
+    setErrorMsg('');
+    const count = projects.filter((p) => p.stageId === stageId).length;
+    if (count > 0) {
+      setErrorMsg(`No se puede eliminar la etapa "${title}" porque contiene ${count} proyecto(s) activo(s). Derívalos antes de borrarla.`);
+      return;
+    }
+    if (confirm(`¿Estás seguro de que deseas eliminar la etapa "${title}"?`)) {
+      const res = deleteStage(stageId);
+      if (!res.success) {
+        setErrorMsg(res.error || 'Error al eliminar etapa');
+      } else {
+        setSuccessMsg(`Etapa "${title}" eliminada correctamente.`);
+        setTimeout(() => setSuccessMsg(''), 3000);
+      }
+    }
   };
 
   const handleCreateDept = (e: React.FormEvent) => {
@@ -249,18 +311,24 @@ export default function AdminPanel() {
 
       {/* PESTAÑA 1: ETAPAS Y COLUMNAS */}
       {activeTab === 'stages' && (
-        <div className="space-y-4">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
-            <h3 className="text-sm font-bold text-slate-800">
-              Personalización de Nombres de Columnas / Etapas del Proceso
-            </h3>
-            <p className="text-xs text-slate-500">
-              Como Administrador puedes renombrar las etapas del ciclo de vida para que se adapten a las normativas de tu organismo.
-            </p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">
+                Columnas y Etapas del Proceso ({stages.length})
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Organiza el flujo de trabajo. Puedes reordenar, renombrar o eliminar etapas vacías.
+              </p>
+            </div>
 
             <div className="divide-y divide-slate-100">
-              {stages.map((stage) => {
+              {stages.map((stage, index) => {
                 const isEditing = editingStageId === stage.id;
+                const stageProjectCount = projects.filter((p) => p.stageId === stage.id).length;
+                const isFirst = index === 0;
+                const isLast = index === stages.length - 1;
+
                 return (
                   <div key={stage.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     {isEditing ? (
@@ -279,18 +347,27 @@ export default function AdminPanel() {
                         />
                       </div>
                     ) : (
-                      <div>
-                        <div className="flex items-center gap-2">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                            Orden {stage.order}
+                            #{stage.order}
                           </span>
                           <h4 className="text-sm font-bold text-slate-900">{stage.title}</h4>
+                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                            stageProjectCount > 0
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : 'bg-slate-50 text-slate-400 border-slate-200'
+                          }`}>
+                            {stageProjectCount} proyecto(s)
+                          </span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-0.5">{stage.description}</p>
+                        {stage.description && (
+                          <p className="text-xs text-slate-500">{stage.description}</p>
+                        )}
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                    <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
                       {isEditing ? (
                         <>
                           <Button
@@ -311,21 +388,104 @@ export default function AdminPanel() {
                           </Button>
                         </>
                       ) : (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleStartEditStage(stage)}
-                          className="h-8 text-xs font-semibold rounded-lg text-blue-600 hover:text-blue-800 gap-1"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                          Renombrar
-                        </Button>
+                        <>
+                          {/* Reordenar */}
+                          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg mr-1">
+                            <button
+                              onClick={() => moveStage(stage.id, 'left')}
+                              disabled={isFirst}
+                              title="Subir posición"
+                              className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-25 transition-all"
+                            >
+                              <ChevronUp className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => moveStage(stage.id, 'right')}
+                              disabled={isLast}
+                              title="Bajar posición"
+                              className="p-1 rounded text-slate-600 hover:text-slate-900 disabled:opacity-25 transition-all"
+                            >
+                              <ChevronDown className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleStartEditStage(stage)}
+                            className="h-8 text-xs font-semibold rounded-lg text-blue-600 hover:text-blue-800 gap-1"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            Editar
+                          </Button>
+
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleDeleteStage(stage.id, stage.title)}
+                            disabled={stageProjectCount > 0 || stages.length <= 1}
+                            title={
+                              stageProjectCount > 0
+                                ? 'No se puede eliminar porque contiene proyectos'
+                                : stages.length <= 1
+                                ? 'No se puede eliminar la única etapa'
+                                : 'Eliminar etapa'
+                            }
+                            className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-25"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </>
                       )}
                     </div>
                   </div>
                 );
               })}
             </div>
+          </div>
+
+          {/* Formulario para Crear Nueva Etapa */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4 h-fit">
+            <div className="flex items-center gap-2">
+              <span className="p-2 rounded-xl bg-purple-50 text-purple-700">
+                <Plus className="w-4 h-4" />
+              </span>
+              <h3 className="text-sm font-bold text-slate-800">Agregar Nueva Etapa / Columna</h3>
+            </div>
+
+            <form onSubmit={handleCreateStage} className="space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">
+                  Título de la Etapa <span className="text-rose-500">*</span>
+                </Label>
+                <Input
+                  value={newStageTitle}
+                  onChange={(e) => setNewStageTitle(e.target.value)}
+                  placeholder={`Ej: ${stages.length + 1}. Control de Calidad`}
+                  className="text-xs h-9 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-bold text-slate-700">
+                  Descripción del Objetivo
+                </Label>
+                <Input
+                  value={newStageDesc}
+                  onChange={(e) => setNewStageDesc(e.target.value)}
+                  placeholder="Objetivo o tareas de la etapa"
+                  className="text-xs h-9 rounded-xl"
+                />
+              </div>
+
+              <Button
+                type="submit"
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold h-9 rounded-xl gap-1.5 shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Crear Etapa en el Tablero
+              </Button>
+            </form>
           </div>
         </div>
       )}
@@ -443,30 +603,75 @@ export default function AdminPanel() {
             <div className="divide-y divide-slate-100">
               {users.map((user) => {
                 const isMasterAdmin = user.id === 'usr-admin';
+                const isEditingUser = editingUserId === user.id;
+
                 return (
                   <div key={user.id} className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <Avatar className="w-9 h-9 border border-slate-200">
+                    <div className="flex items-center gap-3 flex-1">
+                      <Avatar className="w-9 h-9 border border-slate-200 shrink-0">
                         <AvatarImage src={user.avatarUrl} alt={user.name} />
                         <AvatarFallback className="text-xs font-bold">
                           {user.name.substring(0, 2)}
                         </AvatarFallback>
                       </Avatar>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-slate-900">{user.name}</span>
-                          {isMasterAdmin && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
-                              Admin Maestro
-                            </span>
-                          )}
+
+                      {isEditingUser ? (
+                        <div className="flex items-center gap-1.5 flex-1 max-w-sm">
+                          <Input
+                            value={editingUserName}
+                            onChange={(e) => setEditingUserName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveUserName(user.id);
+                              if (e.key === 'Escape') setEditingUserId(null);
+                            }}
+                            placeholder="Nombre del usuario"
+                            className="text-xs font-bold h-8 rounded-lg"
+                            autoFocus
+                          />
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => handleSaveUserName(user.id)}
+                            className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg shrink-0"
+                            title="Guardar nombre"
+                          >
+                            <Save className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => setEditingUserId(null)}
+                            className="h-8 w-8 text-slate-400 hover:text-slate-600 rounded-lg shrink-0"
+                            title="Cancelar"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
-                        <div className="text-xs text-slate-400">{user.email}</div>
-                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
-                          <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                          <span>Clave protegida (Hash SHA-256)</span>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-slate-900">{user.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditUser(user)}
+                              className="text-slate-400 hover:text-blue-600 transition-colors p-0.5 rounded hover:bg-slate-100"
+                              title="Editar nombre"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            {isMasterAdmin && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-100 text-purple-700">
+                                Admin Maestro
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-slate-400">{user.email}</div>
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mt-0.5">
+                            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                            <span>Clave protegida (Hash SHA-256)</span>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
@@ -509,6 +714,17 @@ export default function AdminPanel() {
                           ))}
                         </SelectContent>
                       </Select>
+
+                      {/* Botón de Editar Nombre */}
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        onClick={() => handleStartEditUser(user)}
+                        className="h-8 w-8 text-slate-600 hover:text-blue-600 hover:border-blue-300 rounded-lg shrink-0"
+                        title="Editar Nombre de Usuario"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </Button>
 
                       {/* Botón de Cambiar Contraseña */}
                       <Button

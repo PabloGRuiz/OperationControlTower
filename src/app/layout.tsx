@@ -12,6 +12,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Product Roadmap | Operations Control Tower",
   description: "Tablero interactivo de gestión tipo Product Roadmap inspirado en Asana",
+  icons: {
+    icon: "/comprarIcon.ico",
+    shortcut: "/comprarIcon.ico",
+    apple: "/comprarIcon.ico",
+  },
 };
 
 export default function RootLayout({

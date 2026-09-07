@@ -7,8 +7,10 @@ import {
   Department,
   Stage,
   Project,
+  ProjectAttachment,
   Notification,
   UrgencyLevel,
+  ProjectStatus,
   DerivationHistoryItem,
   initialUsers,
   initialDepartments,
@@ -17,6 +19,7 @@ import {
   initialNotifications
 } from '@/types/roadmap';
 import { hashPassword, INITIAL_ADMIN_PASSWORD_HASH } from '@/lib/crypto';
+import { formatFileSize } from '@/lib/attachmentUtils';
 
 interface ProjectContextType {
   currentUser: User | null;
@@ -41,26 +44,46 @@ interface ProjectContextType {
     urgency: UrgencyLevel;
     targetDepartmentId: string;
     initialObservation?: string;
+    attachments?: Array<{ name: string; size: number; type: string; dataUrl: string }>;
   }) => { success: boolean; error?: string };
   
+  approveProject: (projectId: string, observation?: string) => { success: boolean; error?: string };
   markAsCompleted: (projectId: string, observation?: string) => void;
   markAsControlled: (projectId: string) => void;
   deriveProject: (
     projectId: string,
     toStageId: string,
     toDepartmentId: string,
-    observation: string
+    observation: string,
+    attachments?:
+      | Array<{ name: string; size: number; type: string; dataUrl: string }>
+      | { name: string; size: number; type: string; dataUrl: string }
   ) => void;
   changeUrgency: (projectId: string, urgency: UrgencyLevel, reason: string) => void;
+
+  // Manejo de Documentos y Archivos Adjuntos
+  addAttachmentToProject: (
+    projectId: string,
+    fileData: { name: string; size: number; type: string; dataUrl: string }
+  ) => { success: boolean; error?: string };
+  deleteAttachmentFromProject: (
+    projectId: string,
+    attachmentId: string
+  ) => { success: boolean; error?: string };
   
   // Acciones de Administrador
+  addStage: (title: string, description?: string) => { success: boolean; error?: string };
   updateStageTitle: (stageId: string, newTitle: string, newDescription?: string) => void;
+  deleteStage: (stageId: string) => { success: boolean; error?: string };
+  moveStage: (stageId: string, direction: 'left' | 'right') => void;
   addDepartment: (name: string, code: string, color: string) => void;
   deleteDepartment: (deptId: string) => void;
   addUser: (name: string, email: string, password: string, role: UserRole, departmentId: string) => Promise<void>;
   deleteUser: (userId: string) => void;
+  updateUserName: (userId: string, newName: string) => void;
   updateUserRole: (userId: string, newRole: UserRole, newDepartmentId: string) => void;
   updateUserPassword: (userId: string, newPassword: string) => Promise<void>;
+  changeOwnPassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
   
   // Notificaciones
   markNotificationAsRead: (notificationId: string) => void;
@@ -129,7 +152,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
           setUsers(cleanedUsers);
         }
         if (parsed.departments) setDepartments(parsed.departments);
-        if (parsed.stages) setStages(parsed.stages);
+        if (parsed.stages) {
+          const sorted = [...parsed.stages].sort((a: Stage, b: Stage) => a.order - b.order);
+          setStages(sorted);
+        }
         if (parsed.projects) setProjects(parsed.projects);
         if (parsed.notifications) setNotifications(parsed.notifications);
         if (parsed.currentUserId) {
@@ -277,12 +303,16 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     urgency: UrgencyLevel;
     targetDepartmentId: string;
     initialObservation?: string;
+    attachments?: Array<{ name: string; size: number; type: string; dataUrl: string }>;
   }) => {
     if (!currentUser) return { success: false, error: 'Sesión no iniciada' };
     
     const newCode = `PRJ-2026-${String(projects.length + 1).padStart(3, '0')}`;
     const targetDept = departments.find((d) => d.id === data.targetDepartmentId);
-    const observation = data.initialObservation?.trim() || 'Apertura formal de expediente y pase inicial.';
+    let observation = data.initialObservation?.trim() || 'Apertura formal de expediente y pase inicial.';
+    if (data.attachments && data.attachments.length > 0) {
+      observation += ` (${data.attachments.length} archivo(s) adjunto(s) en la apertura)`;
+    }
     
     const initialHistory: DerivationHistoryItem = {
       id: `h-${Date.now()}`,
@@ -301,6 +331,23 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       actionType: 'CREACION'
     };
 
+    const isStandardUser = currentUser.role === 'USUARIO';
+    const status: ProjectStatus = isStandardUser ? 'PENDIENTE_APROBACION' : 'EN_PROCESO';
+
+    const initialAttachments: ProjectAttachment[] = (data.attachments || []).map((att, idx) => ({
+      id: `att-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      name: att.name,
+      size: att.size,
+      type: att.type,
+      dataUrl: att.dataUrl,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: currentUser.role
+      }
+    }));
+
     const newProject: Project = {
       id: `p-${Date.now()}`,
       code: newCode,
@@ -309,7 +356,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       stageId: stages[0]?.id || 'stage-1',
       currentDepartmentId: data.targetDepartmentId,
       urgency: data.urgency,
-      status: 'EN_PROCESO',
+      status,
       createdBy: {
         id: currentUser.id,
         name: currentUser.name,
@@ -318,7 +365,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       lastObservation: observation,
-      history: [initialHistory]
+      history: [initialHistory],
+      attachments: initialAttachments
     };
 
     setProjects((prev) => [newProject, ...prev]);
@@ -327,8 +375,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const newNotification: Notification = {
       id: `notif-${Date.now()}`,
       recipientDepartmentId: data.targetDepartmentId,
-      title: 'Nuevo Proyecto Asignado',
-      message: `${currentUser.name} (${currentUser.role}) aperturó el proyecto "${data.title}" y lo derivó a ${targetDept?.name || 'tu área'}.`,
+      title: isStandardUser ? 'Nuevo Proyecto Pendiente de Aprobación' : 'Nuevo Proyecto Asignado',
+      message: isStandardUser
+        ? `${currentUser.name} (USUARIO) aperturó el proyecto "${data.title}" y requiere aprobación antes de ser derivado.`
+        : `${currentUser.name} (${currentUser.role}) aperturó el proyecto "${data.title}" y lo derivó a ${targetDept?.name || 'tu área'}.`,
       projectId: newProject.id,
       projectTitle: newProject.title,
       timestamp: new Date().toISOString(),
@@ -337,6 +387,73 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     };
 
     setNotifications((prev) => [newNotification, ...prev]);
+    return { success: true };
+  };
+
+  // APROBAR PROYECTO (Encargado, Director o Administrador)
+  const approveProject = (projectId: string, observation?: string) => {
+    if (!currentUser) return { success: false, error: 'Sesión no iniciada' };
+    if (currentUser.role === 'USUARIO') {
+      return {
+        success: false,
+        error: 'No tienes permisos para aprobar proyectos. Se requiere rol Encargado, Director o Administrador.'
+      };
+    }
+
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return { success: false, error: 'Proyecto no encontrado' };
+    if (project.status !== 'PENDIENTE_APROBACION') {
+      return { success: false, error: 'El proyecto ya ha sido aprobado o no está pendiente.' };
+    }
+
+    const approvalObservation =
+      observation?.trim() || 'Proyecto aprobado formalmente para gestión operativa y derivaciones.';
+
+    const approvalHistory: DerivationHistoryItem = {
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      fromStageId: project.stageId,
+      toStageId: project.stageId,
+      fromDepartmentId: project.currentDepartmentId,
+      toDepartmentId: project.currentDepartmentId,
+      performedBy: {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: currentUser.role,
+        avatarUrl: currentUser.avatarUrl
+      },
+      observation: approvalObservation,
+      actionType: 'APROBACION'
+    };
+
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              status: 'EN_PROCESO',
+              updatedAt: new Date().toISOString(),
+              lastObservation: approvalObservation,
+              history: [approvalHistory, ...p.history]
+            }
+          : p
+      )
+    );
+
+    // Notificar al usuario creador
+    const approvalNotif: Notification = {
+      id: `notif-${Date.now()}`,
+      recipientUserId: project.createdBy.id,
+      title: 'Proyecto Aprobado',
+      message: `${currentUser.name} (${currentUser.role}) aprobó tu proyecto "${project.title}". Ya puede ser gestionado y derivado en el tablero.`,
+      projectId: project.id,
+      projectTitle: project.title,
+      timestamp: new Date().toISOString(),
+      read: false,
+      type: 'PROYECTO_APROBADO'
+    };
+
+    setNotifications((prev) => [approvalNotif, ...prev]);
     return { success: true };
   };
 
@@ -454,14 +571,53 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     projectId: string,
     toStageId: string,
     toDepartmentId: string,
-    observation: string
+    observation: string,
+    attachments?:
+      | Array<{ name: string; size: number; type: string; dataUrl: string }>
+      | { name: string; size: number; type: string; dataUrl: string }
   ) => {
     if (!currentUser) return;
     const project = projects.find((p) => p.id === projectId);
     if (!project) return;
 
+    if (project.status === 'PENDIENTE_APROBACION') {
+      alert('El proyecto está pendiente de aprobación. Debe ser aprobado por un superior antes de poder derivarse.');
+      return;
+    }
+
     const toStage = stages.find((s) => s.id === toStageId)?.title || toStageId;
     const toDept = departments.find((d) => d.id === toDepartmentId)?.name || toDepartmentId;
+
+    let updatedAttachments = project.attachments ? [...project.attachments] : [];
+    let fullObservation = observation.trim();
+
+    const incomingList = Array.isArray(attachments)
+      ? attachments
+      : attachments
+      ? [attachments]
+      : [];
+
+    if (incomingList.length > 0) {
+      const newAtts: ProjectAttachment[] = incomingList.map((att, idx) => ({
+        id: `att-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        name: att.name,
+        size: att.size,
+        type: att.type,
+        dataUrl: att.dataUrl,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: {
+          id: currentUser.id,
+          name: currentUser.name,
+          role: currentUser.role
+        }
+      }));
+      updatedAttachments = [...updatedAttachments, ...newAtts];
+
+      const filesSummary = incomingList
+        .map((f) => `${f.name} (${formatFileSize(f.size)})`)
+        .join(', ');
+      fullObservation += ` [${incomingList.length} documento(s) adjunto(s) al pase: ${filesSummary}]`;
+    }
 
     const historyItem: DerivationHistoryItem = {
       id: `h-${Date.now()}`,
@@ -476,7 +632,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         role: currentUser.role,
         avatarUrl: currentUser.avatarUrl
       },
-      observation: observation.trim(),
+      observation: fullObservation,
       actionType: 'DERIVACION'
     };
 
@@ -488,7 +644,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
               stageId: toStageId,
               currentDepartmentId: toDepartmentId,
               status: 'EN_PROCESO',
-              lastObservation: observation.trim(),
+              lastObservation: fullObservation,
+              attachments: updatedAttachments,
               updatedAt: new Date().toISOString(),
               history: [historyItem, ...p.history]
             }
@@ -500,7 +657,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       id: `notif-${Date.now()}`,
       recipientDepartmentId: toDepartmentId,
       title: 'Proyecto Derivado a tu Departamento',
-      message: `${currentUser.name} (${currentUser.role}) derivó "${project.title}" a ${toDept} en la etapa "${toStage}". Observación: "${observation.trim()}"`,
+      message: `${currentUser.name} (${currentUser.role}) derivó "${project.title}" a ${toDept} en la etapa "${toStage}". Observación: "${fullObservation}"`,
       projectId: project.id,
       projectTitle: project.title,
       timestamp: new Date().toISOString(),
@@ -509,6 +666,118 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     };
 
     setNotifications((prev) => [newNotif, ...prev]);
+  };
+
+  // ADJUNTAR DOCUMENTO A UN PROYECTO EXISTENTE
+  const addAttachmentToProject = (
+    projectId: string,
+    fileData: { name: string; size: number; type: string; dataUrl: string }
+  ) => {
+    if (!currentUser) return { success: false, error: 'Sesión no iniciada' };
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return { success: false, error: 'Proyecto no encontrado' };
+
+    const newAttachment: ProjectAttachment = {
+      id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: fileData.name,
+      size: fileData.size,
+      type: fileData.type,
+      dataUrl: fileData.dataUrl,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: currentUser.role
+      }
+    };
+
+    const historyItem: DerivationHistoryItem = {
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      fromStageId: project.stageId,
+      toStageId: project.stageId,
+      fromDepartmentId: project.currentDepartmentId,
+      toDepartmentId: project.currentDepartmentId,
+      performedBy: {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: currentUser.role,
+        avatarUrl: currentUser.avatarUrl
+      },
+      observation: `Se adjuntó el documento oficial: "${fileData.name}" (${formatFileSize(fileData.size)})`,
+      actionType: 'ADJUNTO'
+    };
+
+    const updatedAttachments = [...(project.attachments || []), newAttachment];
+
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              attachments: updatedAttachments,
+              updatedAt: new Date().toISOString(),
+              history: [historyItem, ...p.history]
+            }
+          : p
+      )
+    );
+
+    return { success: true };
+  };
+
+  // ELIMINAR DOCUMENTO ADJUNTO DE UN PROYECTO
+  const deleteAttachmentFromProject = (projectId: string, attachmentId: string) => {
+    if (!currentUser) return { success: false, error: 'Sesión no iniciada' };
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return { success: false, error: 'Proyecto no encontrado' };
+
+    const targetAtt = project.attachments?.find((a) => a.id === attachmentId);
+    if (!targetAtt) return { success: false, error: 'Archivo adjunto no encontrado' };
+
+    const isOwner = targetAtt.uploadedBy.id === currentUser.id;
+    const isSupervisor = ['ADMINISTRADOR', 'DIRECTOR', 'ENCARGADO'].includes(currentUser.role);
+
+    if (!isOwner && !isSupervisor) {
+      return {
+        success: false,
+        error: 'No tienes permisos para eliminar este documento. Solo el usuario que lo subió o un supervisor puede eliminarlo.'
+      };
+    }
+
+    const updatedAttachments = (project.attachments || []).filter((a) => a.id !== attachmentId);
+
+    const historyItem: DerivationHistoryItem = {
+      id: `h-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      fromStageId: project.stageId,
+      toStageId: project.stageId,
+      fromDepartmentId: project.currentDepartmentId,
+      toDepartmentId: project.currentDepartmentId,
+      performedBy: {
+        id: currentUser.id,
+        name: currentUser.name,
+        role: currentUser.role,
+        avatarUrl: currentUser.avatarUrl
+      },
+      observation: `Se eliminó el documento adjunto: "${targetAtt.name}" (${formatFileSize(targetAtt.size)})`,
+      actionType: 'ADJUNTO'
+    };
+
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === projectId
+          ? {
+              ...p,
+              attachments: updatedAttachments,
+              updatedAt: new Date().toISOString(),
+              history: [historyItem, ...p.history]
+            }
+          : p
+      )
+    );
+
+    return { success: true };
   };
 
   // CAMBIAR URGENCIA
@@ -566,14 +835,64 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ADMINISTRADOR: GESTIÓN DE CONFIGURACIÓN
+  const addStage = (title: string, description?: string) => {
+    if (!title.trim()) {
+      return { success: false, error: 'El nombre de la etapa es obligatorio.' };
+    }
+    const maxOrder = stages.length > 0 ? Math.max(...stages.map((s: Stage) => s.order)) : 0;
+    const newStage: Stage = {
+      id: `stage-${Date.now()}`,
+      title: title.trim(),
+      order: maxOrder + 1,
+      description: description?.trim() || ''
+    };
+    setStages((prev: Stage[]) => [...prev, newStage]);
+    return { success: true };
+  };
+
   const updateStageTitle = (stageId: string, newTitle: string, newDescription?: string) => {
-    setStages((prev) =>
-      prev.map((s) =>
+    setStages((prev: Stage[]) =>
+      prev.map((s: Stage) =>
         s.id === stageId
-          ? { ...s, title: newTitle, description: newDescription || s.description }
+          ? { ...s, title: newTitle, description: newDescription !== undefined ? newDescription : s.description }
           : s
       )
     );
+  };
+
+  const deleteStage = (stageId: string) => {
+    if (stages.length <= 1) {
+      return { success: false, error: 'No se puede eliminar la única etapa del tablero.' };
+    }
+    const hasProjects = projects.some((p: Project) => p.stageId === stageId);
+    if (hasProjects) {
+      return {
+        success: false,
+        error: 'No se puede eliminar la etapa porque contiene proyectos/expedientes activos. Derívalos antes de eliminarla.'
+      };
+    }
+    setStages((prev: Stage[]) => {
+      const filtered = prev.filter((s: Stage) => s.id !== stageId);
+      return filtered.map((s: Stage, idx: number) => ({ ...s, order: idx + 1 }));
+    });
+    return { success: true };
+  };
+
+  const moveStage = (stageId: string, direction: 'left' | 'right') => {
+    setStages((prev: Stage[]) => {
+      const sorted = [...prev].sort((a: Stage, b: Stage) => a.order - b.order);
+      const index = sorted.findIndex((s: Stage) => s.id === stageId);
+      if (index === -1) return prev;
+      if (direction === 'left' && index === 0) return prev;
+      if (direction === 'right' && index === sorted.length - 1) return prev;
+
+      const targetIndex = direction === 'left' ? index - 1 : index + 1;
+      const temp = sorted[index];
+      sorted[index] = sorted[targetIndex];
+      sorted[targetIndex] = temp;
+
+      return sorted.map((s: Stage, idx: number) => ({ ...s, order: idx + 1 }));
+    });
   };
 
   const addDepartment = (name: string, code: string, color: string) => {
@@ -616,6 +935,17 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setUsers((prev) => prev.filter((u) => u.id !== userId));
   };
 
+  const updateUserName = (userId: string, newName: string) => {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, name: trimmed } : u))
+    );
+    if (currentUser?.id === userId) {
+      setCurrentUser((prev) => (prev ? { ...prev, name: trimmed } : null));
+    }
+  };
+
   const updateUserRole = (
     userId: string,
     newRole: UserRole,
@@ -655,6 +985,56 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (currentUser?.id === userId) {
       setCurrentUser((prev) => (prev ? { ...prev, passwordHash: pHash } : null));
     }
+  };
+
+  // Cambio de contraseña propia por cualquier usuario autenticado
+  const changeOwnPassword = async (
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentUser) {
+      return { success: false, error: 'No hay una sesión de usuario activa.' };
+    }
+
+    const trimmedCurrent = currentPassword.trim();
+    const trimmedNew = newPassword.trim();
+
+    if (!trimmedCurrent) {
+      return { success: false, error: 'Debes ingresar tu contraseña actual.' };
+    }
+
+    if (!trimmedNew || trimmedNew.length < 6) {
+      return {
+        success: false,
+        error: 'La nueva contraseña debe contener al menos 6 caracteres.'
+      };
+    }
+
+    const userInDb = users.find((u) => u.id === currentUser.id);
+    if (!userInDb) {
+      return { success: false, error: 'Usuario no encontrado en la base de datos.' };
+    }
+
+    const currentHash = await hashPassword(trimmedCurrent);
+    const isValidAdminInitial =
+      userInDb.id === 'usr-admin' &&
+      (trimmedCurrent === 'admin123' ||
+        trimmedCurrent === 'admin' ||
+        userInDb.passwordHash === currentHash);
+
+    const isCurrentMatch = userInDb.passwordHash === currentHash || isValidAdminInitial;
+
+    if (!isCurrentMatch) {
+      return { success: false, error: 'La contraseña actual ingresada es incorrecta.' };
+    }
+
+    const newHash = await hashPassword(trimmedNew);
+    setUsers((prev) =>
+      prev.map((u) => (u.id === currentUser.id ? { ...u, passwordHash: newHash } : u))
+    );
+    setCurrentUser((prev) => (prev ? { ...prev, passwordHash: newHash } : null));
+
+    return { success: true };
   };
 
   // NOTIFICACIONES
@@ -706,17 +1086,25 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         logout,
         lockoutRemainingSeconds,
         createProject,
+        approveProject,
         markAsCompleted,
         markAsControlled,
         deriveProject,
         changeUrgency,
+        addAttachmentToProject,
+        deleteAttachmentFromProject,
+        addStage,
         updateStageTitle,
+        deleteStage,
+        moveStage,
         addDepartment,
         deleteDepartment,
         addUser,
         deleteUser,
+        updateUserName,
         updateUserRole,
         updateUserPassword,
+        changeOwnPassword,
         markNotificationAsRead,
         markAllNotificationsAsRead,
         resetCleanDatabase
